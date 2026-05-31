@@ -1,0 +1,85 @@
+{
+  "best_combined_config": {
+    "pop_size": 32,
+    "sigma0": 0.25,
+    "init_mode": "random",
+    "repair_mode": "none"
+  },
+  "per_sweep_winners": {
+    "pop_size": {
+      "winner": {
+        "pop_size": 32
+      },
+      "score": 23.567015370303686,
+      "alternatives": [
+        {
+          "config": {
+            "pop_size": 8
+          },
+          "score": 23.476712288481423
+        },
+        {
+          "config": {
+            "pop_size": 16
+          },
+          "score": 23.062910493894293
+        }
+      ]
+    },
+    "sigma0": {
+      "winner": {
+        "sigma0": 0.25
+      },
+      "score": 22.562127490116005,
+      "alternatives": [
+        {
+          "config": {
+            "sigma0": 0.35
+          },
+          "score": 22.451365734971766
+        },
+        {
+          "config": {
+            "sigma0": 0.15
+          },
+          "score": 22.20421028419313
+        }
+      ]
+    },
+    "init_mode": {
+      "winner": {
+        "init_mode": "random"
+      },
+      "score": 23.478398708956817,
+      "alternatives": [
+        {
+          "config": {
+            "init_mode": "midpoint"
+          },
+          "score": 23.27272378140453
+        },
+        {
+          "config": {
+            "init_mode": "feasible"
+          },
+          "score": 22.613726402425215
+        }
+      ]
+    },
+    "repair_mode": {
+      "winner": {
+        "repair_mode": "none"
+      },
+      "score": 22.83689706742516,
+      "alternatives": [
+        {
+          "config": {
+            "repair_mode": "mean_segment"
+          },
+          "score": 22.613726402425215
+        }
+      ]
+    }
+  },
+  "source_tuning_file": "results/tuning_cmaes.json"
+}

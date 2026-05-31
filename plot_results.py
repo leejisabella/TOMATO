@@ -1,8 +1,8 @@
-"""Generate all comparison + diagnostic plots for the BO/GA experiments.
+"""Generate all comparison + diagnostic plots for the optimizer experiments.
 
-Reads JSON histories from results/{bo,ga}/ and tuning summaries from
-results/tuning_{bo,ga}.json (if present), and writes PNGs into
-artifacts/plots/.
+Reads JSON histories from results/{bo,ga,pso,cmaes}/ and tuning summaries
+from results/tuning_{bo,ga,pso,cmaes}.json (if present), and writes PNGs
+into artifacts/plots/.
 
 Plots (matching the approved plan §A–E):
   A. Per-algorithm convergence diagnostics
@@ -22,12 +22,14 @@ Plots (matching the approved plan §A–E):
       12. tuning_ga_popsize.png
       13. tuning_ga_mutation.png
       14. tuning_ga_crossover.png
+      15. tuning_pso_*.png
+      16. tuning_cmaes_*.png
   D. GA inner-mechanics
-      15. ga_snapshots_<crop>.png  (every 100th eval, 3-column grid)
+      17. ga_snapshots_<crop>.png  (every 100th eval, 3-column grid)
   E. Solution-quality analysis
-      16. optimal_config_heatmap.png
-      17. cost_breakdown_<crop>.png
-      18. sensitivity_<crop>.png
+      18. optimal_config_heatmap.png
+      19. cost_breakdown_<crop>.png
+      20. sensitivity_<crop>.png
 
 Usage:
     python plot_results.py
@@ -52,8 +54,16 @@ from surrogate.api import load_predictor
 
 
 CROPS = ("Tomato", "Cucumber", "Lettuce", "Pepper")
-ALGO_COLORS = {"BayesianOptimization": "#1f77b4", "GeneticAlgorithm": "#d62728"}
-ALGO_SHORT = {"BayesianOptimization": "BO", "GeneticAlgorithm": "GA"}
+ALGORITHM_SPECS = (
+    ("bo", "BayesianOptimization", "BO", "#1f77b4"),
+    ("ga", "GeneticAlgorithm", "GA", "#d62728"),
+    ("pso", "ParticleSwarmOptimization", "PSO", "#ff7f0e"),
+    ("cmaes", "CMAES", "CMA-ES", "#9467bd"),
+)
+ALGO_DIR_TO_NAME = {algo_dir: algo_name for algo_dir, algo_name, _, _ in ALGORITHM_SPECS}
+ALGO_COLORS = {algo_name: color for _, algo_name, _, color in ALGORITHM_SPECS}
+ALGO_SHORT = {algo_name: short for _, algo_name, short, _ in ALGORITHM_SPECS}
+ALGO_NAME_TO_DIR = {algo_name: algo_dir for algo_dir, algo_name, _, _ in ALGORITHM_SPECS}
 
 
 # =============================================================================
@@ -72,6 +82,23 @@ def load_histories(results_dir: Path, algo_dir: str, crop: str) -> List[Optimize
         except Exception as e:
             print(f"  skipping {path.name}: {e}")
     return out
+
+
+def available_algorithms(results_dir: Path) -> List[Tuple[str, str]]:
+    """Algorithms with at least one results directory or tuning file present."""
+    available: List[Tuple[str, str]] = []
+    for algo_dir, algo_name, _, _ in ALGORITHM_SPECS:
+        if (results_dir / algo_dir).exists() or (results_dir / f"tuning_{algo_dir}.json").exists():
+            available.append((algo_dir, algo_name))
+    return available
+
+
+def algorithm_iteration_label(algo: str) -> str:
+    if algo == "GeneticAlgorithm":
+        return "generation"
+    if algo in {"ParticleSwarmOptimization", "CMAES"}:
+        return "iteration"
+    return "evaluation"
 
 
 def median_iqr(curves: List[np.ndarray]) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
@@ -136,8 +163,10 @@ def plot_convergence(
             label=f"{ALGO_SHORT.get(algo, algo)} median")
     ax.fill_between(x, q25, q75, color=color, alpha=0.18, label="IQR")
 
-    ax.set_xlabel("evaluation #" if algo == "BayesianOptimization"
-                  else "evaluation # (across generations)")
+    if algo == "BayesianOptimization":
+        ax.set_xlabel("evaluation #")
+    else:
+        ax.set_xlabel(f"evaluation # (across {algorithm_iteration_label(algo)}s)")
     ax.set_ylabel("best-feasible yield  (kg/m²)")
     ax.set_title(f"{ALGO_SHORT.get(algo, algo)}  —  {crop}  convergence")
     ax.legend(loc="lower right")
@@ -220,25 +249,24 @@ def plot_violation_over_iter(
 
 
 def plot_comparison_convergence(
-    bo_hist: List[OptimizerHistory], ga_hist: List[OptimizerHistory],
-    crop: str, out_dir: Path,
+    histories_by_algo: Dict[str, List[OptimizerHistory]],
+    crop: str,
+    out_dir: Path,
 ) -> None:
-    if not bo_hist and not ga_hist:
+    present = [(algo, hs) for algo, hs in histories_by_algo.items() if hs]
+    if not present:
         return
     fig, ax = plt.subplots(figsize=(8, 5))
-    for hists, label in ((bo_hist, "BayesianOptimization"),
-                         (ga_hist, "GeneticAlgorithm")):
-        if not hists:
-            continue
+    for algo, hists in present:
         curves = [np.asarray(h.best_feasible_y, dtype=float) for h in hists]
         x, med, q25, q75 = median_iqr(curves)
-        col = ALGO_COLORS[label]
+        col = ALGO_COLORS[algo]
         ax.plot(x, med, color=col, linewidth=2.4,
-                label=f"{ALGO_SHORT[label]} median")
+                label=f"{ALGO_SHORT[algo]} median")
         ax.fill_between(x, q25, q75, color=col, alpha=0.15)
     ax.set_xlabel("evaluation #")
     ax.set_ylabel("best-feasible yield (kg/m²)")
-    ax.set_title(f"BO vs GA — best-feasible yield  ({crop})")
+    ax.set_title(f"Cross-algorithm best-feasible yield  ({crop})")
     ax.legend(loc="lower right")
     ax.grid(True, alpha=0.3)
     fig.tight_layout()
@@ -249,25 +277,24 @@ def plot_comparison_convergence(
 
 
 def plot_comparison_walltime(
-    bo_hist: List[OptimizerHistory], ga_hist: List[OptimizerHistory],
-    crop: str, out_dir: Path,
+    histories_by_algo: Dict[str, List[OptimizerHistory]],
+    crop: str,
+    out_dir: Path,
 ) -> None:
-    if not bo_hist and not ga_hist:
+    present = [(algo, hs) for algo, hs in histories_by_algo.items() if hs]
+    if not present:
         return
     fig, ax = plt.subplots(figsize=(8, 5))
-    for hists, label in ((bo_hist, "BayesianOptimization"),
-                         (ga_hist, "GeneticAlgorithm")):
-        if not hists:
-            continue
-        col = ALGO_COLORS[label]
+    for algo, hists in present:
+        col = ALGO_COLORS[algo]
         for h in hists:
             t = np.asarray(h.wall_time_s)
             y = np.asarray(h.best_feasible_y, dtype=float)
             ax.plot(t, y, color=col, alpha=0.4, linewidth=1.0)
-        ax.plot([], [], color=col, label=ALGO_SHORT[label])  # legend handle
+        ax.plot([], [], color=col, label=ALGO_SHORT[algo])  # legend handle
     ax.set_xlabel("wall-clock time (s)")
     ax.set_ylabel("best-feasible yield (kg/m²)")
-    ax.set_title(f"BO vs GA — convergence in wall-clock time  ({crop})")
+    ax.set_title(f"Cross-algorithm wall-clock convergence  ({crop})")
     ax.set_xscale("symlog", linthresh=0.1)
     ax.legend(loc="lower right")
     ax.grid(True, which="both", alpha=0.3)
@@ -281,12 +308,19 @@ def plot_comparison_walltime(
 def plot_final_yield_bars(
     results_dir: Path, out_dir: Path,
 ) -> None:
-    """Per-crop bar chart, two bars per crop (BO, GA), error = seed std."""
-    means: Dict[str, Dict[str, float]] = {a: {} for a in ALGO_SHORT.values()}
-    stds: Dict[str, Dict[str, float]] = {a: {} for a in ALGO_SHORT.values()}
+    """Per-crop grouped bar chart, one bar per available algorithm."""
+    present_algos = [
+        algo_name
+        for algo_dir, algo_name in available_algorithms(results_dir)
+        if any(load_histories(results_dir, algo_dir, crop) for crop in CROPS)
+    ]
+    if not present_algos:
+        return
+
+    means: Dict[str, Dict[str, float]] = {ALGO_SHORT[a]: {} for a in present_algos}
+    stds: Dict[str, Dict[str, float]] = {ALGO_SHORT[a]: {} for a in present_algos}
     for crop in CROPS:
-        for algo_dir, algo_full in (("bo", "BayesianOptimization"),
-                                    ("ga", "GeneticAlgorithm")):
+        for algo_dir, algo_full in available_algorithms(results_dir):
             hs = load_histories(results_dir, algo_dir, crop)
             if not hs:
                 continue
@@ -299,12 +333,14 @@ def plot_final_yield_bars(
 
     fig, ax = plt.subplots(figsize=(8, 5))
     x = np.arange(len(CROPS))
-    width = 0.35
-    for i, algo in enumerate(("BO", "GA")):
+    width = 0.8 / len(present_algos)
+    for i, algo_full in enumerate(present_algos):
+        algo = ALGO_SHORT[algo_full]
         vals = [means[algo].get(c, np.nan) for c in CROPS]
         errs = [stds[algo].get(c, 0.0) for c in CROPS]
-        col = ALGO_COLORS["BayesianOptimization" if algo == "BO" else "GeneticAlgorithm"]
-        ax.bar(x + (i - 0.5) * width, vals, width, yerr=errs, capsize=4,
+        col = ALGO_COLORS[algo_full]
+        offset = (i - (len(present_algos) - 1) / 2.0) * width
+        ax.bar(x + offset, vals, width, yerr=errs, capsize=4,
                color=col, alpha=0.85, label=algo)
     ax.set_xticks(x)
     ax.set_xticklabels(CROPS)
@@ -323,11 +359,18 @@ def plot_sample_efficiency(
     results_dir: Path, out_dir: Path, fraction: float = 0.95,
 ) -> None:
     """# evals to reach `fraction` of best-found yield, per crop × algo."""
-    data: Dict[str, Dict[str, List[int]]] = {a: {} for a in ALGO_SHORT.values()}
+    present_algos = [
+        algo_name
+        for algo_dir, algo_name in available_algorithms(results_dir)
+        if any(load_histories(results_dir, algo_dir, crop) for crop in CROPS)
+    ]
+    if not present_algos:
+        return
+
+    data: Dict[str, Dict[str, List[int]]] = {ALGO_SHORT[a]: {} for a in present_algos}
     for crop in CROPS:
         all_finals: List[float] = []
-        for algo_dir, algo_full in (("bo", "BayesianOptimization"),
-                                    ("ga", "GeneticAlgorithm")):
+        for algo_dir, algo_full in available_algorithms(results_dir):
             for h in load_histories(results_dir, algo_dir, crop):
                 v = h.best_feasible_so_far()
                 if np.isfinite(v):
@@ -335,8 +378,7 @@ def plot_sample_efficiency(
         if not all_finals:
             continue
         target = fraction * max(all_finals)
-        for algo_dir, algo_full in (("bo", "BayesianOptimization"),
-                                    ("ga", "GeneticAlgorithm")):
+        for algo_dir, algo_full in available_algorithms(results_dir):
             evals_to_target: List[int] = []
             for h in load_histories(results_dir, algo_dir, crop):
                 y = np.asarray(h.best_feasible_y, dtype=float)
@@ -349,12 +391,14 @@ def plot_sample_efficiency(
 
     fig, ax = plt.subplots(figsize=(8, 5))
     x = np.arange(len(CROPS))
-    width = 0.35
-    for i, algo in enumerate(("BO", "GA")):
+    width = 0.8 / len(present_algos)
+    for i, algo_full in enumerate(present_algos):
+        algo = ALGO_SHORT[algo_full]
         means = [np.mean(data[algo].get(c, [np.nan])) for c in CROPS]
         stds = [np.std(data[algo].get(c, [0])) for c in CROPS]
-        col = ALGO_COLORS["BayesianOptimization" if algo == "BO" else "GeneticAlgorithm"]
-        ax.bar(x + (i - 0.5) * width, means, width, yerr=stds, capsize=4,
+        col = ALGO_COLORS[algo_full]
+        offset = (i - (len(present_algos) - 1) / 2.0) * width
+        ax.bar(x + offset, means, width, yerr=stds, capsize=4,
                color=col, alpha=0.85, label=algo)
     ax.set_xticks(x)
     ax.set_xticklabels(CROPS)
@@ -373,12 +417,19 @@ def plot_convergence_status(
     results_dir: Path, out_dir: Path,
 ) -> None:
     """Stacked bar: fraction of seeds that converged (plateau) vs hit-cap."""
+    present_algos = [
+        algo_name
+        for algo_dir, algo_name in available_algorithms(results_dir)
+        if any(load_histories(results_dir, algo_dir, crop) for crop in CROPS)
+    ]
+    if not present_algos:
+        return
+
     fig, ax = plt.subplots(figsize=(8, 5))
     x = np.arange(len(CROPS))
-    width = 0.35
-    for i, (algo_dir, algo_full) in enumerate(
-        (("bo", "BayesianOptimization"), ("ga", "GeneticAlgorithm"))
-    ):
+    width = 0.8 / len(present_algos)
+    for i, algo_full in enumerate(present_algos):
+        algo_dir = ALGO_NAME_TO_DIR[algo_full]
         conv = []
         cap = []
         for crop in CROPS:
@@ -388,9 +439,10 @@ def plot_convergence_status(
             conv.append(n_conv / n)
             cap.append(1 - n_conv / n)
         col = ALGO_COLORS[algo_full]
-        ax.bar(x + (i - 0.5) * width, conv, width,
+        offset = (i - (len(present_algos) - 1) / 2.0) * width
+        ax.bar(x + offset, conv, width,
                color=col, alpha=0.85, label=f"{ALGO_SHORT[algo_full]} plateau")
-        ax.bar(x + (i - 0.5) * width, cap, width, bottom=conv,
+        ax.bar(x + offset, cap, width, bottom=conv,
                color=col, alpha=0.35, label=f"{ALGO_SHORT[algo_full]} hit cap",
                hatch="//")
     ax.set_xticks(x)
@@ -523,6 +575,75 @@ def plot_tuning_ga(results_dir: Path, out_dir: Path) -> None:
         _tuning_plot("eta_c", sweeps["eta_c"], ALGO_COLORS["GeneticAlgorithm"],
                      "GA — SBX η_c (crossover distribution) sweep",
                      out_dir / "tuning_ga_eta_c.png", ["eta_c"])
+
+
+def plot_tuning_pso(results_dir: Path, out_dir: Path) -> None:
+    path = results_dir / "tuning_pso.json"
+    if not path.exists():
+        return
+    with path.open("r") as f:
+        data = json.load(f)
+    sweeps = data["sweeps"]
+    if "swarm_size" in sweeps:
+        _tuning_plot("swarm_size", sweeps["swarm_size"],
+                     ALGO_COLORS["ParticleSwarmOptimization"],
+                     "PSO — swarm size sweep",
+                     out_dir / "tuning_pso_swarm_size.png", ["swarm_size"])
+    if "w" in sweeps:
+        _tuning_plot("w", sweeps["w"],
+                     ALGO_COLORS["ParticleSwarmOptimization"],
+                     "PSO — inertia weight sweep",
+                     out_dir / "tuning_pso_w.png", ["w"])
+    if "c1" in sweeps:
+        _tuning_plot("c1", sweeps["c1"],
+                     ALGO_COLORS["ParticleSwarmOptimization"],
+                     "PSO — cognitive coefficient sweep",
+                     out_dir / "tuning_pso_c1.png", ["c1"])
+    if "c2" in sweeps:
+        _tuning_plot("c2", sweeps["c2"],
+                     ALGO_COLORS["ParticleSwarmOptimization"],
+                     "PSO — social coefficient sweep",
+                     out_dir / "tuning_pso_c2.png", ["c2"])
+    if "velocity_clamp_frac" in sweeps:
+        _tuning_plot("velocity_clamp_frac", sweeps["velocity_clamp_frac"],
+                     ALGO_COLORS["ParticleSwarmOptimization"],
+                     "PSO — velocity clamp sweep",
+                     out_dir / "tuning_pso_velocity_clamp.png",
+                     ["velocity_clamp_frac"])
+    if "repair_mode" in sweeps:
+        _tuning_plot("repair_mode", sweeps["repair_mode"],
+                     ALGO_COLORS["ParticleSwarmOptimization"],
+                     "PSO — repair mode sweep",
+                     out_dir / "tuning_pso_repair.png", ["repair_mode"])
+
+
+def plot_tuning_cmaes(results_dir: Path, out_dir: Path) -> None:
+    path = results_dir / "tuning_cmaes.json"
+    if not path.exists():
+        return
+    with path.open("r") as f:
+        data = json.load(f)
+    sweeps = data["sweeps"]
+    if "pop_size" in sweeps:
+        _tuning_plot("pop_size", sweeps["pop_size"],
+                     ALGO_COLORS["CMAES"],
+                     "CMA-ES — population size sweep",
+                     out_dir / "tuning_cmaes_pop_size.png", ["pop_size"])
+    if "sigma0" in sweeps:
+        _tuning_plot("sigma0", sweeps["sigma0"],
+                     ALGO_COLORS["CMAES"],
+                     "CMA-ES — initial step size sweep",
+                     out_dir / "tuning_cmaes_sigma0.png", ["sigma0"])
+    if "init_mode" in sweeps:
+        _tuning_plot("init_mode", sweeps["init_mode"],
+                     ALGO_COLORS["CMAES"],
+                     "CMA-ES — initialization mode sweep",
+                     out_dir / "tuning_cmaes_init_mode.png", ["init_mode"])
+    if "repair_mode" in sweeps:
+        _tuning_plot("repair_mode", sweeps["repair_mode"],
+                     ALGO_COLORS["CMAES"],
+                     "CMA-ES — repair mode sweep",
+                     out_dir / "tuning_cmaes_repair.png", ["repair_mode"])
 
 
 # =============================================================================
@@ -692,8 +813,7 @@ def plot_optimal_config_heatmap(results_dir: Path, out_dir: Path) -> None:
     for crop in CROPS:
         problem = GreenhouseProblem(crop=crop, predictor=predictor)
         lo, hi = problem.bounds()
-        for algo_dir, algo_full in (("bo", "BayesianOptimization"),
-                                    ("ga", "GeneticAlgorithm")):
+        for algo_dir, algo_full in available_algorithms(results_dir):
             best = _best_x_summary(results_dir, algo_dir, crop)
             if best is None:
                 continue
@@ -724,18 +844,25 @@ def plot_optimal_config_heatmap(results_dir: Path, out_dir: Path) -> None:
 
 
 def plot_cost_breakdown(results_dir: Path, out_dir: Path) -> None:
-    """For each crop: stacked bar showing $/m² breakdown for BO & GA best solutions."""
+    """For each crop: stacked bar showing $/m² breakdown for each algorithm's best solution."""
+    present_algos = [
+        algo_name
+        for algo_dir, algo_name in available_algorithms(results_dir)
+        if any(load_histories(results_dir, algo_dir, crop) for crop in CROPS)
+    ]
+    if not present_algos:
+        return
+
     fig, ax = plt.subplots(figsize=(8.5, 5))
     x = np.arange(len(CROPS))
-    width = 0.35
+    width = 0.8 / len(present_algos)
 
     # We'll need cost breakdowns. Recompute via problem.cost_breakdown_usd
     # so we don't depend on whatever was saved.
     predictor = load_predictor()
 
-    for i, (algo_dir, algo_full) in enumerate(
-        (("bo", "BayesianOptimization"), ("ga", "GeneticAlgorithm"))
-    ):
+    for i, algo_full in enumerate(present_algos):
+        algo_dir = ALGO_NAME_TO_DIR[algo_full]
         elec = []
         water = []
         fert = []
@@ -752,16 +879,17 @@ def plot_cost_breakdown(results_dir: Path, out_dir: Path) -> None:
             elec.append(bd["electricity"] / area)
             water.append(bd["water"] / area)
             fert.append(bd["fertilizer"] / area)
-        offset = (i - 0.5) * width
+        offset = (i - (len(present_algos) - 1) / 2.0) * width
+        base = ALGO_COLORS[algo_full]
         ax.bar(x + offset, elec, width, label=f"{ALGO_SHORT[algo_full]} elec",
-               color="#1f77b4" if algo_dir == "bo" else "#aec7e8")
+               color=base, alpha=0.85)
         ax.bar(x + offset, water, width, bottom=elec,
                label=f"{ALGO_SHORT[algo_full]} water",
-               color="#2ca02c" if algo_dir == "bo" else "#98df8a")
+               color=base, alpha=0.55, hatch="//")
         ax.bar(x + offset, fert, width,
                bottom=np.array(elec) + np.array(water),
                label=f"{ALGO_SHORT[algo_full]} fert",
-               color="#d62728" if algo_dir == "bo" else "#ff9896")
+               color=base, alpha=0.35, hatch="..")
 
     ax.set_xticks(x)
     ax.set_xticklabels(CROPS)
@@ -786,10 +914,10 @@ def plot_sensitivity(
     problem = GreenhouseProblem(crop=crop, predictor=predictor)
     lo, hi = problem.bounds()
 
-    # Pick best across BO & GA so the comparison sensitivity is anchored at
-    # the strongest candidate.
+    # Pick best across all available algorithms so the sensitivity is
+    # anchored at the strongest candidate found overall.
     best_overall: Tuple[Optional[np.ndarray], float] = (None, -np.inf)
-    for algo_dir in ("bo", "ga"):
+    for algo_dir, _ in available_algorithms(results_dir):
         b = _best_x_summary(results_dir, algo_dir, crop)
         if b is None:
             continue
@@ -845,13 +973,15 @@ def main() -> None:
     parser.add_argument("--results", type=Path, default=Path("results"))
     parser.add_argument("--out", type=Path, default=Path("artifacts") / "plots")
     parser.add_argument("--skip-tuning", action="store_true",
-                        help="skip Section C if you haven't run tune_{bo,ga}.py")
+                        help="skip Section C if you haven't run the tune_*.py scripts")
     args = parser.parse_args()
     args.out.mkdir(parents=True, exist_ok=True)
 
+    algos = available_algorithms(args.results)
+
     print("== Section A: per-algorithm convergence ==")
     for crop in CROPS:
-        for algo_dir in ("bo", "ga"):
+        for algo_dir, _ in algos:
             hs = load_histories(args.results, algo_dir, crop)
             plot_convergence(hs, crop, args.out)
             plot_feasibility_rate(hs, crop, args.out)
@@ -859,10 +989,12 @@ def main() -> None:
 
     print("\n== Section B: cross-algorithm comparisons ==")
     for crop in CROPS:
-        bo = load_histories(args.results, "bo", crop)
-        ga = load_histories(args.results, "ga", crop)
-        plot_comparison_convergence(bo, ga, crop, args.out)
-        plot_comparison_walltime(bo, ga, crop, args.out)
+        histories_by_algo = {
+            algo_name: load_histories(args.results, algo_dir, crop)
+            for algo_dir, algo_name in algos
+        }
+        plot_comparison_convergence(histories_by_algo, crop, args.out)
+        plot_comparison_walltime(histories_by_algo, crop, args.out)
     plot_final_yield_bars(args.results, args.out)
     plot_sample_efficiency(args.results, args.out)
     plot_convergence_status(args.results, args.out)
@@ -871,16 +1003,21 @@ def main() -> None:
         print("\n== Section C: hyperparameter tuning ==")
         plot_tuning_bo(args.results, args.out)
         plot_tuning_ga(args.results, args.out)
+        plot_tuning_pso(args.results, args.out)
+        plot_tuning_cmaes(args.results, args.out)
 
     print("\n== Section D: GA inner mechanics ==")
     for crop in CROPS:
         plot_ga_snapshots(args.results, crop, args.out)
 
     print("\n== Section E: solution-quality analysis ==")
-    plot_optimal_config_heatmap(args.results, args.out)
-    plot_cost_breakdown(args.results, args.out)
-    for crop in CROPS:
-        plot_sensitivity(args.results, crop, args.out)
+    try:
+        plot_optimal_config_heatmap(args.results, args.out)
+        plot_cost_breakdown(args.results, args.out)
+        for crop in CROPS:
+            plot_sensitivity(args.results, crop, args.out)
+    except ModuleNotFoundError as e:
+        print(f"  skipping Section E because a model dependency is unavailable: {e}")
 
     print(f"\nAll plots saved to: {args.out}")
 

@@ -1,0 +1,127 @@
+{
+  "best_combined_config": {
+    "swarm_size": 20,
+    "w": 0.7,
+    "c1": 2.0,
+    "c2": 2.0,
+    "velocity_clamp_frac": 0.1,
+    "repair_mode": "none"
+  },
+  "per_sweep_winners": {
+    "swarm_size": {
+      "winner": {
+        "swarm_size": 20
+      },
+      "score": 24.428479475709345,
+      "alternatives": [
+        {
+          "config": {
+            "swarm_size": 50
+          },
+          "score": 24.39046161649506
+        },
+        {
+          "config": {
+            "swarm_size": 100
+          },
+          "score": 24.125139654435262
+        }
+      ]
+    },
+    "w": {
+      "winner": {
+        "w": 0.7
+      },
+      "score": 24.39046161649506,
+      "alternatives": [
+        {
+          "config": {
+            "w": 0.9
+          },
+          "score": 24.306783987901355
+        },
+        {
+          "config": {
+            "w": 0.4
+          },
+          "score": 23.94943808184486
+        }
+      ]
+    },
+    "c1": {
+      "winner": {
+        "c1": 2.0
+      },
+      "score": 24.765822387248896,
+      "alternatives": [
+        {
+          "config": {
+            "c1": 1.0
+          },
+          "score": 24.44638932588537
+        },
+        {
+          "config": {
+            "c1": 1.5
+          },
+          "score": 24.39046161649506
+        }
+      ]
+    },
+    "c2": {
+      "winner": {
+        "c2": 2.0
+      },
+      "score": 24.50341789016469,
+      "alternatives": [
+        {
+          "config": {
+            "c2": 1.5
+          },
+          "score": 24.39046161649506
+        },
+        {
+          "config": {
+            "c2": 1.0
+          },
+          "score": 23.97392263437459
+        }
+      ]
+    },
+    "velocity_clamp_frac": {
+      "winner": {
+        "velocity_clamp_frac": 0.1
+      },
+      "score": 24.72604361112707,
+      "alternatives": [
+        {
+          "config": {
+            "velocity_clamp_frac": 0.4
+          },
+          "score": 24.55367157254285
+        },
+        {
+          "config": {
+            "velocity_clamp_frac": 0.2
+          },
+          "score": 24.39046161649506
+        }
+      ]
+    },
+    "repair_mode": {
+      "winner": {
+        "repair_mode": "none"
+      },
+      "score": 24.50926663540401,
+      "alternatives": [
+        {
+          "config": {
+            "repair_mode": "segment"
+          },
+          "score": 24.39046161649506
+        }
+      ]
+    }
+  },
+  "source_tuning_file": "results/tuning_pso.json"
+}

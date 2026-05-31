@@ -39,12 +39,15 @@ from optimization.crop_specs import (
     MAX_PEST_SEVERITY,
 )
 from optimization.bayesian import BayesianOptimizer
+from optimization.cma_es import CMAESOptimizer
 from optimization.genetic import GeneticAlgorithm
 from optimization.history import OptimizerHistory
+from optimization.particle_swarm import ParticleSwarmOptimizer
 from optimization.problem import GreenhouseProblem, make_all_problems
 
 __all__ = [
     "BayesianOptimizer",
+    "CMAESOptimizer",
     "CROP_SPECS",
     "Constraint",
     "DECISION_VARIABLES",
@@ -58,6 +61,7 @@ __all__ = [
     "MAX_PEST_SEVERITY",
     "NUM_LAYERS",
     "OptimizerHistory",
+    "ParticleSwarmOptimizer",
     "TOTAL_AREA_M2",
     "VPD_LOWER_KPA",
     "VPD_UPPER_KPA",
