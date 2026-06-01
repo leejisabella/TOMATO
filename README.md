@@ -2,4 +2,4 @@
 
 This project implements and analyzes four different optimization algorithms on a plant growth surrogate model. Simulated plants include tomatoes, lettuce, cucumbers, and peppers.
 
-Project completed by Isabella Lee and Arianna Cao. 
+Project completed by Isabella Lee and Arianna Cao. Please see Final_Paper.pdf for the final report of results and analysis.
